@@ -1,0 +1,61 @@
+{
+  "channel": {
+    "name": "Money Beats",
+    "niche": "personal finance shorts",
+    "voice": "direct, punchy, no fluff — every line earns the next 2 seconds",
+    "cadence_per_day": 2
+  },
+  "backlog": [
+    {
+      "id": "vid001",
+      "status": "scripted",
+      "title": "Your savings account is losing you money",
+      "lines": [
+        {"beat": "hook", "text": "Your savings account is quietly losing you money, and your bank will never tell you."},
+        {"beat": "body", "text": "Inflation runs at around three percent a year. Most big bank savings accounts pay you less than half a percent."},
+        {"beat": "body", "text": "That means every single year, the money just sitting there buys less than it did before."},
+        {"beat": "body", "text": "A high yield savings account pays ten times more, same safety, same government protection, just a different bank."},
+        {"beat": "cta", "text": "Move it once. Stop losing money for doing nothing. Follow for the next one."}
+      ]
+    },
+    {
+      "id": "vid002",
+      "status": "scripted",
+      "title": "Compound interest in 40 seconds",
+      "lines": [
+        {"beat": "hook", "text": "If you invest two hundred pounds a month starting today, here is what nobody shows you."},
+        {"beat": "body", "text": "In year one, you've put in twenty four hundred, and interest has barely done anything."},
+        {"beat": "body", "text": "By year twenty, you've put in forty eight thousand, but the account is worth over one hundred thousand."},
+        {"beat": "body", "text": "That extra fifty thousand pounds, you didn't work for. Time did."},
+        {"beat": "cta", "text": "The only variable you control is starting today instead of next month. Follow for part two."}
+      ]
+    },
+    {
+      "id": "vid003",
+      "status": "scripted",
+      "title": "The credit score myth costing you thousands",
+      "lines": [
+        {"beat": "hook", "text": "Closing your oldest credit card to simplify your wallet could be the most expensive clean up you ever do."},
+        {"beat": "body", "text": "A big chunk of your credit score is just the average age of your accounts."},
+        {"beat": "body", "text": "Close the old one, and that average drops overnight, and so does your score."},
+        {"beat": "body", "text": "Lower score means worse rates on the next car loan or mortgage, sometimes worth thousands over the loan."},
+        {"beat": "cta", "text": "Keep it open, use it once a year, cut it up if you have to. Follow for more money traps."}
+      ]
+    },
+    {
+      "id": "vid004",
+      "status": "queued_headline_only",
+      "title": "Why paying yourself first beats every budgeting app"
+    },
+    {
+      "id": "vid005",
+      "status": "queued_headline_only",
+      "title": "The 50/30/20 rule is broken. Here's what replaces it"
+    },
+    {
+      "id": "vid006",
+      "status": "queued_headline_only",
+      "title": "One number that predicts if you retire rich"
+    }
+  ]
+}
