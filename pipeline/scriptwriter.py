@@ -37,8 +37,11 @@ def generate_scripts(topics: list[str], existing_titles: list[str]) -> list[dict
         system=SYSTEM,
         messages=[{"role": "user", "content": prompt}],
     )
-    text = resp.content[0].text.strip()
-    return json.loads(text)
+    text = next(block.text for block in resp.content if block.type == "text").strip()
+    if text.startswith("```"):
+        text = text.split("```")[1]
+        text = text[4:] if text.startswith("json") else text
+    return json.loads(text.strip())
 
 
 def append_to_plan(new_scripts: list[dict], plan_path: str):
