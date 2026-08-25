@@ -29,22 +29,41 @@ def top_up_backlog():
 
     scripted = [v for v in plan["backlog"] if v["status"] == "scripted"]
     queued = [v for v in plan["backlog"] if v["status"] == "queued_headline_only"]
-    if len(scripted) >= MIN_SCRIPTED_BUFFER or not queued:
+
+    # Buffer depth = scripted items not yet rendered, not all-time scripted
+    # count. "scripted" status never changes once set, so counting it
+    # directly meant this permanently read "3 >= 3" the moment the first
+    # backlog was rendered — Scribe would never fire again, key or no key.
+    unrendered = [v for v in scripted if not os.path.exists(os.path.join(OUT, f"{v['id']}.mp4"))]
+    if len(unrendered) >= MIN_SCRIPTED_BUFFER or not queued:
         return
 
     from pipeline.scriptwriter import generate_scripts, append_to_plan
-    topics = [v["title"] for v in queued[:MIN_SCRIPTED_BUFFER]]
+    to_cover = queued[:MIN_SCRIPTED_BUFFER]
+    topics = [v["title"] for v in to_cover]
+    covered_ids = {v["id"] for v in to_cover}
     existing_titles = [v["title"] for v in plan["backlog"]]
     print(f"[daily] Scribe generating {len(topics)} new scripts...")
-    new_scripts = generate_scripts(topics, existing_titles)
+    try:
+        new_scripts = generate_scripts(topics, existing_titles)
+    except Exception as e:
+        # Expired/revoked/rate-limited key, network blip, malformed JSON back
+        # from the model — none of that should take the whole run down.
+        # Render whatever's already scripted and try ideation again next tick.
+        print(f"[daily] Scribe failed ({e.__class__.__name__}: {e}) — "
+              f"continuing with existing backlog, will retry next run")
+        return
+
     append_to_plan(new_scripts, PLAN_PATH)
 
-    # mark the source headlines consumed so they aren't regenerated forever
+    # Mark the source headlines consumed BY ID, not by title text — Scribe
+    # usually writes a punchier title than the original headline, so a
+    # text match here silently never fires and the same headlines get
+    # re-sent to Scribe forever, burning API calls on duplicate coverage.
     with open(PLAN_PATH) as f:
         plan = json.load(f)
-    covered = {s["title"] for s in new_scripts}
     for v in plan["backlog"]:
-        if v["title"] in covered and v["status"] == "queued_headline_only":
+        if v["id"] in covered_ids and v["status"] == "queued_headline_only":
             v["status"] = "superseded"
     with open(PLAN_PATH, "w") as f:
         json.dump(plan, f, indent=2)
