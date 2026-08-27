@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import sys
 import time
 
@@ -9,9 +10,28 @@ from pipeline.captions import words_with_timing
 from pipeline.assembler import render_video
 from pipeline.metadata import build_metadata
 
-ROOT = os.path.dirname(__file__)
-WORK = os.path.join(ROOT, "work")
-OUT = os.path.join(ROOT, "output")
+ROOT = os.path.dirname(__file__)  # code lives here, baked into the image
+# Railway sets this automatically to wherever a volume is mounted (e.g.
+# /app/data) — no need to hardcode the path we told it to use. Falls back
+# to ROOT when unset, so this behaves the same in local/dev runs with no
+# volume attached.
+DATA_DIR = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", ROOT)
+OUT = os.path.join(DATA_DIR, "output")
+WORK = os.path.join(ROOT, ".work")  # per-render scratch, fine to lose on restart
+PLAN_PATH = os.path.join(DATA_DIR, "content_plan.json")
+_SEED_PLAN_PATH = os.path.join(ROOT, "content_plan.json")
+
+
+def ensure_plan_seeded():
+    """First boot on a fresh/empty volume: copy the git-tracked starter
+    backlog onto the volume once. Every run after that reads/writes the
+    volume's copy, so Scribe's new scripts and render progress actually
+    persist across deploys instead of resetting to the git baseline
+    every time new code ships."""
+    os.makedirs(DATA_DIR, exist_ok=True)
+    if not os.path.exists(PLAN_PATH):
+        shutil.copy(_SEED_PLAN_PATH, PLAN_PATH)
+        print(f"[orchestrator] seeded {PLAN_PATH} from git baseline (first boot on this volume)")
 
 
 def produce(video, palette_idx=0):
@@ -41,7 +61,8 @@ def produce(video, palette_idx=0):
 
 
 if __name__ == "__main__":
-    with open(os.path.join(ROOT, "content_plan.json")) as f:
+    ensure_plan_seeded()
+    with open(PLAN_PATH) as f:
         plan = json.load(f)
 
     scripted = [v for v in plan["backlog"] if v["status"] == "scripted"]
