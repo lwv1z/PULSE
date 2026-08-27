@@ -1,22 +1,23 @@
 """
 daily.py — what Railway's cron actually runs.
 
-1. If ANTHROPIC_API_KEY is set and the "scripted" backlog is running low,
+1. Seed content_plan.json onto the persistent volume if this is the
+   volume's first boot (see orchestrator.ensure_plan_seeded).
+2. If ANTHROPIC_API_KEY is set and the "scripted" backlog is running low,
    ask Scribe (pipeline/scriptwriter.py) to write more from the queued
    headlines. Skipped silently if no key is present yet — the pipeline
    still runs on whatever's already scripted.
-2. Render every "scripted" video that doesn't already have an output
+3. Render every "scripted" video that doesn't already have an output
    file (so re-running the same day doesn't redo finished work).
-3. Exit. Railway's cron restarts this fresh next time (see README).
+4. Exit. Railway's cron restarts this fresh next time (see README).
 """
 import json
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-from orchestrator import produce, ROOT, OUT
+from orchestrator import produce, ensure_plan_seeded, PLAN_PATH, OUT
 
-PLAN_PATH = os.path.join(ROOT, "content_plan.json")
 MIN_SCRIPTED_BUFFER = 3
 
 
@@ -83,5 +84,6 @@ def render_new():
 
 
 if __name__ == "__main__":
+    ensure_plan_seeded()
     top_up_backlog()
     render_new()
