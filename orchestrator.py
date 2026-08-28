@@ -34,6 +34,28 @@ def ensure_plan_seeded():
         print(f"[orchestrator] seeded {PLAN_PATH} from git baseline (first boot on this volume)")
 
 
+def ensure_youtube_creds():
+    """Write YOUTUBE_CLIENT_SECRET_JSON / YOUTUBE_TOKEN_JSON (Railway env
+    vars) out to files on the persisted volume, once. Returns (None, None)
+    if those vars aren't set — Herald just stays idle in that case rather
+    than erroring, same as Scribe does with no ANTHROPIC_API_KEY."""
+    client_secret_json = os.environ.get("YOUTUBE_CLIENT_SECRET_JSON")
+    token_json = os.environ.get("YOUTUBE_TOKEN_JSON")
+    if not client_secret_json or not token_json:
+        return None, None
+
+    os.makedirs(DATA_DIR, exist_ok=True)
+    client_secret_path = os.path.join(DATA_DIR, "client_secret.json")
+    token_path = os.path.join(DATA_DIR, "token.json")
+    if not os.path.exists(client_secret_path):
+        with open(client_secret_path, "w") as f:
+            f.write(client_secret_json)
+    if not os.path.exists(token_path):
+        with open(token_path, "w") as f:
+            f.write(token_json)
+    return client_secret_path, token_path
+
+
 def produce(video, palette_idx=0):
     t0 = time.time()
     work_dir = os.path.join(WORK, video["id"])
