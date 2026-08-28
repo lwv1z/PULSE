@@ -1,24 +1,21 @@
 """
 youtube_publish.py — real Data API v3 upload flow (google-api-python-client).
 
-NOT executed in this sandbox: no network path to googleapis.com here, and
-no OAuth credentials exist for your channel. This is production-ready code
-to run on your own deployment (e.g. the Railway service — see README).
+Called from daily.py's publish_new(), which passes the actual persisted
+credential paths (see orchestrator.ensure_youtube_creds) — the defaults
+below are just fallbacks for running this file standalone.
 
-One-time setup (~15 min):
-  1. Google Cloud Console -> new project -> enable "YouTube Data API v3".
-  2. Create OAuth 2.0 credentials (Desktop app) -> download client_secret.json.
-  3. Run this file's `authorize()` once, locally, to produce token.json
-     (opens a browser, you approve your own channel).
-  4. IMPORTANT: uploads from an unaudited API project publish as PRIVATE
-     by default. For public Shorts you request a compliance audit from
-     Google (Cloud Console -> API compliance). This is normal, documented,
-     and routine for a single-owner channel — budget a few days for it,
-     not weeks. Until it's approved, videos land as private/unlisted and
-     you flip them public by hand, which is a fine interim workflow.
-  5. Quota: uploads bill to their own ~100/day bucket (separate from the
-     10,000-unit pool as of the June 2026 change), so this comfortably
-     covers a 2-a-day cadence.
+IMPORTANT: uploads from an unaudited API project publish as PRIVATE by
+default — that's not a bug in this code, it's YouTube enforcing it
+server-side. For public Shorts, request a compliance audit from Google
+(Cloud Console -> API compliance). Routine for a single-owner channel,
+budget a few days for it. Until it clears, videos land private and you
+flip them public by hand in Studio — daily.py already defaults to
+privacy_status="private" for exactly this reason.
+
+Quota: uploads bill to their own ~100/day bucket (separate from the
+10,000-unit pool as of the June 2026 change), so this comfortably
+covers a 2-a-day cadence.
 """
 import os
 
