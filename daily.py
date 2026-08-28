@@ -9,14 +9,17 @@ daily.py — what Railway's cron actually runs.
    still runs on whatever's already scripted.
 3. Render every "scripted" video that doesn't already have an output
    file (so re-running the same day doesn't redo finished work).
-4. Exit. Railway's cron restarts this fresh next time (see README).
+4. If YOUTUBE_CLIENT_SECRET_JSON / YOUTUBE_TOKEN_JSON are set, publish
+   every rendered video that hasn't been uploaded yet. Skipped silently
+   if unset — same graceful-idle pattern as Scribe.
+5. Exit. Railway's cron restarts this fresh next time (see README).
 """
 import json
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-from orchestrator import produce, ensure_plan_seeded, PLAN_PATH, OUT
+from orchestrator import produce, ensure_plan_seeded, ensure_youtube_creds, PLAN_PATH, OUT
 
 MIN_SCRIPTED_BUFFER = 3
 
@@ -79,11 +82,57 @@ def render_new():
         if os.path.exists(out_path):
             continue
         produce(video, palette_idx=i)
-        # TODO once publisher credentials are set: call publishers/*.py here
-        # with out_path + the matching *.metadata.json for this video.
+
+
+def publish_new():
+    client_secret_path, token_path = ensure_youtube_creds()
+    if not client_secret_path:
+        print("[daily] Herald idle — no YouTube credentials set")
+        return
+
+    from publishers.youtube_publish import upload_short
+
+    with open(PLAN_PATH) as f:
+        plan = json.load(f)
+
+    changed = False
+    for video in plan["backlog"]:
+        if video["status"] != "scripted" or video.get("youtube_video_id"):
+            continue
+        out_path = os.path.join(OUT, f"{video['id']}.mp4")
+        meta_path = os.path.join(OUT, f"{video['id']}.metadata.json")
+        if not os.path.exists(out_path) or not os.path.exists(meta_path):
+            continue  # not rendered yet this run — publish_new runs after render_new anyway
+
+        with open(meta_path) as f:
+            yt_meta = json.load(f)["youtube"]
+
+        print(f"[daily] Herald uploading {video['id']}...")
+        try:
+            # Forced private regardless of what's passed: unaudited API
+            # projects can't make videos public via the API at all — see
+            # README. Flip individual videos to public by hand in Studio,
+            # or once the audit clears, change this default.
+            result = upload_short(
+                out_path, yt_meta["title"], yt_meta["description"], yt_meta["tags"],
+                privacy_status="private",
+                client_secret_path=client_secret_path, token_path=token_path,
+            )
+        except Exception as e:
+            print(f"[daily] Herald failed on {video['id']} ({e.__class__.__name__}: {e}) — will retry next run")
+            continue
+
+        video["youtube_video_id"] = result["id"]
+        changed = True
+        print(f"[daily] Herald published {video['id']} -> https://youtu.be/{result['id']} (private)")
+
+    if changed:
+        with open(PLAN_PATH, "w") as f:
+            json.dump(plan, f, indent=2)
 
 
 if __name__ == "__main__":
     ensure_plan_seeded()
     top_up_backlog()
     render_new()
+    publish_new()
