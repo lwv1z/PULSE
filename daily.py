@@ -3,10 +3,11 @@ daily.py — what Railway's cron actually runs.
 
 1. Seed content_plan.json onto the persistent volume if this is the
    volume's first boot (see orchestrator.ensure_plan_seeded).
-2. If ANTHROPIC_API_KEY is set and the "scripted" backlog is running low,
-   ask Scribe (pipeline/scriptwriter.py) to write more from the queued
-   headlines. Skipped silently if no key is present yet — the pipeline
-   still runs on whatever's already scripted.
+2. If ANTHROPIC_API_KEY is set and the render-ready buffer is running low:
+   if the queue of raw headline ideas is empty, ask Scout to invent new
+   ones from scratch first, then ask Scribe (pipeline/scriptwriter.py)
+   to expand queued headlines into full scripts. Skipped silently if no
+   key is present — the pipeline still runs on whatever's already scripted.
 3. Render every "scripted" video that doesn't already have an output
    file (so re-running the same day doesn't redo finished work).
 4. If YOUTUBE_CLIENT_SECRET_JSON / YOUTUBE_TOKEN_JSON are set, publish
@@ -39,10 +40,31 @@ def top_up_backlog():
     # directly meant this permanently read "3 >= 3" the moment the first
     # backlog was rendered — Scribe would never fire again, key or no key.
     unrendered = [v for v in scripted if not os.path.exists(os.path.join(OUT, f"{v['id']}.mp4"))]
-    if len(unrendered) >= MIN_SCRIPTED_BUFFER or not queued:
+    if len(unrendered) >= MIN_SCRIPTED_BUFFER:
         return
 
-    from pipeline.scriptwriter import generate_scripts, append_to_plan
+    from pipeline.scriptwriter import generate_scripts, generate_topics, append_to_plan, append_topics_to_plan
+
+    if not queued:
+        # Scribe can only expand headlines that already exist — without this,
+        # the pipeline silently stalls forever once the original hand-seeded
+        # headlines run out, which is exactly what happened after the first
+        # 6 videos: nothing was left to expand, and nothing was inventing
+        # anything new.
+        existing_titles = [v["title"] for v in plan["backlog"]]
+        print("[daily] queue empty — Scout generating new topic ideas...")
+        try:
+            new_topics = generate_topics(existing_titles, n=MIN_SCRIPTED_BUFFER * 2)
+        except Exception as e:
+            print(f"[daily] Scout failed ({e.__class__.__name__}: {e}) — will retry next run")
+            return
+        append_topics_to_plan(new_topics, PLAN_PATH)
+        with open(PLAN_PATH) as f:
+            plan = json.load(f)
+        queued = [v for v in plan["backlog"] if v["status"] == "queued_headline_only"]
+        if not queued:
+            return
+
     to_cover = queued[:MIN_SCRIPTED_BUFFER]
     topics = [v["title"] for v in to_cover]
     covered_ids = {v["id"] for v in to_cover}
@@ -119,6 +141,9 @@ def publish_new():
                 client_secret_path=client_secret_path, token_path=token_path,
             )
         except Exception as e:
+            # Expired token, quota, network blip — skip this video, don't
+            # take down the rest of the run. Retried automatically next tick
+            # since youtube_video_id never gets set below.
             print(f"[daily] Herald failed on {video['id']} ({e.__class__.__name__}: {e}) — will retry next run")
             continue
 
