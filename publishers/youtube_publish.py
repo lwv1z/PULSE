@@ -5,13 +5,10 @@ Called from daily.py's publish_new(), which passes the actual persisted
 credential paths (see orchestrator.ensure_youtube_creds) — the defaults
 below are just fallbacks for running this file standalone.
 
-IMPORTANT: uploads from an unaudited API project publish as PRIVATE by
-default — that's not a bug in this code, it's YouTube enforcing it
-server-side. For public Shorts, request a compliance audit from Google
-(Cloud Console -> API compliance). Routine for a single-owner channel,
-budget a few days for it. Until it clears, videos land private and you
-flip them public by hand in Studio — daily.py already defaults to
-privacy_status="private" for exactly this reason.
+Google's compliance audit cleared Aug 31 2026, so uploads publish public
+by default now (see daily.py). set_public() below is the one-time cleanup
+for videos uploaded before that date, which stayed forced-private under
+the old unaudited-project restriction.
 
 Quota: uploads bill to their own ~100/day bucket (separate from the
 10,000-unit pool as of the June 2026 change), so this comfortably
@@ -59,3 +56,16 @@ def upload_short(video_path: str, title: str, description: str, tags: list,
     while response is None:
         status, response = request.next_chunk()
     return response  # contains "id" -> https://youtu.be/{id}
+
+
+def set_public(video_id: str, client_secret_path="client_secret.json", token_path="token.json"):
+    """Flip an already-uploaded video from private to public — used once
+    to clean up videos uploaded before the compliance audit cleared."""
+    from googleapiclient.discovery import build
+
+    creds = authorize(client_secret_path, token_path)
+    youtube = build("youtube", "v3", credentials=creds)
+    return youtube.videos().update(
+        part="status",
+        body={"id": video_id, "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False}},
+    ).execute()
