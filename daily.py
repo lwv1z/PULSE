@@ -35,10 +35,6 @@ def top_up_backlog():
     scripted = [v for v in plan["backlog"] if v["status"] == "scripted"]
     queued = [v for v in plan["backlog"] if v["status"] == "queued_headline_only"]
 
-    # Buffer depth = scripted items not yet rendered, not all-time scripted
-    # count. "scripted" status never changes once set, so counting it
-    # directly meant this permanently read "3 >= 3" the moment the first
-    # backlog was rendered — Scribe would never fire again, key or no key.
     unrendered = [v for v in scripted if not os.path.exists(os.path.join(OUT, f"{v['id']}.mp4"))]
     if len(unrendered) >= MIN_SCRIPTED_BUFFER:
         return
@@ -46,11 +42,6 @@ def top_up_backlog():
     from pipeline.scriptwriter import generate_scripts, generate_topics, append_to_plan, append_topics_to_plan
 
     if not queued:
-        # Scribe can only expand headlines that already exist — without this,
-        # the pipeline silently stalls forever once the original hand-seeded
-        # headlines run out, which is exactly what happened after the first
-        # 6 videos: nothing was left to expand, and nothing was inventing
-        # anything new.
         existing_titles = [v["title"] for v in plan["backlog"]]
         print("[daily] queue empty — Scout generating new topic ideas...")
         try:
@@ -73,19 +64,12 @@ def top_up_backlog():
     try:
         new_scripts = generate_scripts(topics, existing_titles)
     except Exception as e:
-        # Expired/revoked/rate-limited key, network blip, malformed JSON back
-        # from the model — none of that should take the whole run down.
-        # Render whatever's already scripted and try ideation again next tick.
         print(f"[daily] Scribe failed ({e.__class__.__name__}: {e}) — "
               f"continuing with existing backlog, will retry next run")
         return
 
     append_to_plan(new_scripts, PLAN_PATH)
 
-    # Mark the source headlines consumed BY ID, not by title text — Scribe
-    # usually writes a punchier title than the original headline, so a
-    # text match here silently never fires and the same headlines get
-    # re-sent to Scribe forever, burning API calls on duplicate coverage.
     with open(PLAN_PATH) as f:
         plan = json.load(f)
     for v in plan["backlog"]:
@@ -124,32 +108,61 @@ def publish_new():
         out_path = os.path.join(OUT, f"{video['id']}.mp4")
         meta_path = os.path.join(OUT, f"{video['id']}.metadata.json")
         if not os.path.exists(out_path) or not os.path.exists(meta_path):
-            continue  # not rendered yet this run — publish_new runs after render_new anyway
+            continue
 
         with open(meta_path) as f:
             yt_meta = json.load(f)["youtube"]
 
         print(f"[daily] Herald uploading {video['id']}...")
         try:
-            # Forced private regardless of what's passed: unaudited API
-            # projects can't make videos public via the API at all — see
-            # README. Flip individual videos to public by hand in Studio,
-            # or once the audit clears, change this default.
+            # Google's compliance audit cleared Aug 31 2026 — public uploads
+            # are no longer restricted. Videos uploaded before that date are
+            # still private on YouTube and need flipping by hand or via a
+            # one-off cleanup; everything from here on posts public directly.
             result = upload_short(
                 out_path, yt_meta["title"], yt_meta["description"], yt_meta["tags"],
-                privacy_status="private",
+                privacy_status="public",
                 client_secret_path=client_secret_path, token_path=token_path,
             )
         except Exception as e:
-            # Expired token, quota, network blip — skip this video, don't
-            # take down the rest of the run. Retried automatically next tick
-            # since youtube_video_id never gets set below.
             print(f"[daily] Herald failed on {video['id']} ({e.__class__.__name__}: {e}) — will retry next run")
             continue
 
         video["youtube_video_id"] = result["id"]
         changed = True
-        print(f"[daily] Herald published {video['id']} -> https://youtu.be/{result['id']} (private)")
+        print(f"[daily] Herald published {video['id']} -> https://youtu.be/{result['id']} (public)")
+
+    if changed:
+        with open(PLAN_PATH, "w") as f:
+            json.dump(plan, f, indent=2)
+
+
+def flip_legacy_private_to_public():
+    """One-time cleanup: videos uploaded before Google's compliance audit
+    cleared (Aug 31 2026) were forced private and stayed that way. This
+    flips each of them to public exactly once, then marks it done so it
+    isn't re-checked on every future run."""
+    client_secret_path, token_path = ensure_youtube_creds()
+    if not client_secret_path:
+        return
+
+    from publishers.youtube_publish import set_public
+
+    with open(PLAN_PATH) as f:
+        plan = json.load(f)
+
+    changed = False
+    for video in plan["backlog"]:
+        vid_id = video.get("youtube_video_id")
+        if not vid_id or video.get("youtube_public"):
+            continue
+        try:
+            set_public(vid_id, client_secret_path, token_path)
+            video["youtube_public"] = True
+            changed = True
+            print(f"[daily] Herald flipped {video['id']} ({vid_id}) to public")
+        except Exception as e:
+            print(f"[daily] Herald failed to flip {video['id']} public ({e.__class__.__name__}: {e}) — will retry next run")
 
     if changed:
         with open(PLAN_PATH, "w") as f:
@@ -161,3 +174,4 @@ if __name__ == "__main__":
     top_up_backlog()
     render_new()
     publish_new()
+    flip_legacy_private_to_public()
